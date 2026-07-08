@@ -7,7 +7,7 @@ Thank you for your interest in contributing! This project maps security controls
 ## Ways to contribute
 
 - **Fix a mapping error** — if a control is mapped incorrectly or to the wrong category, open an issue or submit a PR
-- **Add a new framework** — DORA, PCI-DSS, SOC 2, CIS Controls are on the roadmap
+- **Add a new framework** — PCI-DSS, SOC 2, CIS Controls are on the roadmap
 - **Improve documentation** — clearer README sections, usage examples, or docstrings
 - **Report bugs** — unexpected output, edge cases, or CLI errors
 
@@ -18,9 +18,10 @@ Thank you for your interest in contributing! This project maps security controls
 ```bash
 git clone https://github.com/workmcg/control-crosswalk
 cd control-crosswalk
-pip install -r requirements.txt   # if applicable
-python control_crosswalk.py --help
+python3 src/crosswalk.py --help
 ```
+
+No dependencies to install — this tool is deliberately kept to the Python standard library only.
 
 ---
 
@@ -50,6 +51,7 @@ Control mappings must be traceable to the official source documents:
 - ISO/IEC 27001:2022 (Annex A)
 - NIST CSF 2.0 (NIST SP 800-53)
 - NIS2 Directive 2022/2555
+- DORA — Regulation (EU) 2022/2554
 
 If you're adding or modifying a mapping, cite the specific clause or article number in your PR description.
 
