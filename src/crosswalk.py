@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 control-crosswalk: map and analyse security controls across
-ISO/IEC 27001:2022, NIST CSF 2.0 and the NIS2 Directive (Art. 21).
+ISO/IEC 27001:2022, NIST CSF 2.0, the NIS2 Directive (Art. 21) and DORA.
 A small, dependency-free GRC utility for control mapping, coverage
 gap analysis and exporting an audit-ready crosswalk.
 Author: Mukul Chauhan
@@ -37,6 +37,7 @@ def cmd_lookup(args: argparse.Namespace, data: dict) -> None:
     """Show framework equivalents for one ISO 27001 control."""
     query = args.control.strip().upper()
     nis2_text = data["nis2_article21_measures"]
+    dora_text = data.get("dora_articles", {})
     matches = [c for c in data["controls"] if c["iso_id"].upper() == query]
     if not matches:
         print(f"No control found for '{args.control}'.")
@@ -51,6 +52,9 @@ def cmd_lookup(args: argparse.Namespace, data: dict) -> None:
         print("NIS2 Art.21  :")
         for ref in ctrl["nis2"]:
             print(f"   {ref}  {nis2_text.get(ref, '')}")
+        print("DORA         :")
+        for ref in ctrl.get("dora", []):
+            print(f"   {ref}  {dora_text.get(ref, '')}")
         print("=" * 60)
 
 
@@ -77,15 +81,18 @@ def cmd_search(args: argparse.Namespace, data: dict) -> None:
     """
     keyword = args.keyword.strip().lower()
     nis2_text = data["nis2_article21_measures"]
+    dora_text = data.get("dora_articles", {})
     matches = []
     for ctrl in data["controls"]:
-        # Search across: control name, NIST refs, NIS2 refs and NIS2 measure text
+        # Search across: control name, NIST refs, NIS2/DORA refs and their measure text
         searchable = " ".join([
             ctrl["iso_name"],
             ctrl["iso_theme"],
             " ".join(ctrl["nist_csf"]),
             " ".join(ctrl["nis2"]),
             " ".join(nis2_text.get(r, "") for r in ctrl["nis2"]),
+            " ".join(ctrl.get("dora", [])),
+            " ".join(dora_text.get(r, "") for r in ctrl.get("dora", [])),
         ]).lower()
         if keyword in searchable:
             matches.append(ctrl)
@@ -98,10 +105,12 @@ def cmd_search(args: argparse.Namespace, data: dict) -> None:
     for ctrl in matches:
         nist = ", ".join(ctrl["nist_csf"]) or "(none)"
         nis2 = ", ".join(ctrl["nis2"]) or "(none)"
+        dora = ", ".join(ctrl.get("dora", [])) or "(none)"
         print(f"  {ctrl['iso_id']:<8} {ctrl['iso_name']}")
         print(f"           Theme: {ctrl['iso_theme']}")
         print(f"           NIST : {nist}")
         print(f"           NIS2 : {nis2}")
+        print(f"           DORA : {dora}")
         print()
 
 
@@ -133,6 +142,13 @@ def cmd_stats(args: argparse.Namespace, data: dict) -> None:
     for c in controls:
         nis2_refs.update(c["nis2"])
 
+    # DORA coverage
+    dora_text = data.get("dora_articles", {})
+    with_dora = sum(1 for c in controls if c.get("dora"))
+    dora_refs: set[str] = set()
+    for c in controls:
+        dora_refs.update(c.get("dora", []))
+
     print("=" * 60)
     print("control-crosswalk  —  Dataset Statistics")
     print("=" * 60)
@@ -154,6 +170,13 @@ def cmd_stats(args: argparse.Namespace, data: dict) -> None:
           f"({with_nis2 / total * 100:.1f}%)")
     print(f"  Art.21 measures covered    : {len(nis2_refs)} / {len(nis2_text)}")
     print(f"  Measures                   : {', '.join(sorted(nis2_refs))}")
+
+    if dora_text:
+        print(f"\nDORA coverage:")
+        print(f"  Controls with DORA mapping : {with_dora} / {total} "
+              f"({with_dora / total * 100:.1f}%)")
+        print(f"  Articles covered           : {len(dora_refs)} / {len(dora_text)}")
+        print(f"  Articles                   : {', '.join(sorted(dora_refs, key=lambda a: int(a.split('.')[1])))}")
     print("=" * 60)
 
 
@@ -204,6 +227,18 @@ def cmd_gap(args: argparse.Namespace, data: dict) -> None:
         for ref in sorted(open_nis2):
             print(f"  {ref}  {nis2_text.get(ref, '')}")
 
+    # Which DORA articles still have an open ISO gap?
+    dora_text = data.get("dora_articles", {})
+    open_dora: dict[str, list[str]] = {}
+    for cid in missing:
+        for ref in by_id[cid].get("dora", []):
+            open_dora.setdefault(ref, []).append(cid)
+
+    if open_dora:
+        print("\nDORA articles with open ISO gaps:")
+        for ref in sorted(open_dora, key=lambda a: int(a.split(".")[1])):
+            print(f"  {ref}  {dora_text.get(ref, '')}")
+
     if unknown:
         print(f"\nNote: {len(unknown)} listed control(s) not in the "
               f"crosswalk and ignored: {', '.join(unknown)}")
@@ -217,9 +252,10 @@ def cmd_export(args: argparse.Namespace, data: dict) -> None:
     fmt = getattr(args, "format", "csv").lower()
     out_path = Path(args.output)
     nis2_text = data["nis2_article21_measures"]
+    dora_text = data.get("dora_articles", {})
 
     if fmt == "json":
-        # Enrich each control with the NIS2 measure descriptions inline
+        # Enrich each control with the NIS2/DORA measure descriptions inline
         enriched = []
         for ctrl in data["controls"]:
             enriched.append({
@@ -229,6 +265,8 @@ def cmd_export(args: argparse.Namespace, data: dict) -> None:
                 "nist_csf":     ctrl["nist_csf"],
                 "nis2_refs":    ctrl["nis2"],
                 "nis2_measures": {r: nis2_text.get(r, "") for r in ctrl["nis2"]},
+                "dora_refs":    ctrl.get("dora", []),
+                "dora_articles": {r: dora_text.get(r, "") for r in ctrl.get("dora", [])},
             })
         with open(out_path, "w", encoding="utf-8") as fh:
             json.dump({"controls": enriched, "total": len(enriched)},
@@ -241,7 +279,8 @@ def cmd_export(args: argparse.Namespace, data: dict) -> None:
             writer = csv.writer(fh)
             writer.writerow(
                 ["ISO 27001:2022", "Control name", "Theme",
-                 "NIST CSF 2.0", "NIS2 Art.21", "NIS2 measure"]
+                 "NIST CSF 2.0", "NIS2 Art.21", "NIS2 measure",
+                 "DORA article", "DORA article title"]
             )
             for ctrl in data["controls"]:
                 writer.writerow([
@@ -251,6 +290,8 @@ def cmd_export(args: argparse.Namespace, data: dict) -> None:
                     "; ".join(ctrl["nist_csf"]),
                     "; ".join(ctrl["nis2"]),
                     " | ".join(nis2_text.get(r, "") for r in ctrl["nis2"]),
+                    "; ".join(ctrl.get("dora", [])),
+                    " | ".join(dora_text.get(r, "") for r in ctrl.get("dora", [])),
                 ])
         print(f"Exported {len(data['controls'])} controls to {out_path} (CSV)")
 
@@ -263,7 +304,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="crosswalk",
         description="Map and analyse controls across ISO 27001:2022, "
-                    "NIST CSF 2.0 and NIS2.",
+                    "NIST CSF 2.0, NIS2 and DORA.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
